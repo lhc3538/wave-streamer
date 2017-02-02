@@ -33,5 +33,5 @@ struct _output {
     int (*init)(input_parameter *);
     int (*stop)();
     int (*run)();
-    int (*add)(int);
+    int (*add)(int*);
 };

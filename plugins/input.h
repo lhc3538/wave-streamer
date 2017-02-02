@@ -23,7 +23,7 @@ struct _input {
     input_parameter param; // this holds the command line arguments
 
     /* mutex for thread_id */
-    pthread_mutex_t db;
+    pthread_mutex_t mutex;
 
     /* thread ids of data dealer*/
     pthread_t thread_id[MAX_USERS];
@@ -32,5 +32,5 @@ struct _input {
     int (*init)(input_parameter *);
     int (*stop)();
     int (*run)();
-    int (*add)(int);
+    int (*add)(int*);
 };
