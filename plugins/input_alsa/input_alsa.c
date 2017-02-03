@@ -12,11 +12,11 @@
 #include <pthread.h>
 #include <alsa/asoundlib.h>
 
-#include "../../audio_pipe.h"
+#include "../../wave_streamer.h"
 #include "../../utils.h"
+#include "../../tools/alsa.h"
 
 #define INPUT_PLUGIN_NAME "ALSA input plugin"
-#define MAX_ARGUMENTS 32
 
 /* private functions and variables to this plugin */
 static pthread_t   worker;
@@ -26,9 +26,6 @@ void *worker_thread( void *);
 void worker_cleanup(void *);
 void help(void);
 
-static int plugin_number;
-
-int init_alsa();
 //alsa init parameter
 char *dev = "default";
 snd_pcm_format_t format = SND_PCM_FORMAT_S16_LE;
@@ -38,11 +35,15 @@ snd_pcm_t *capture_handle;
 int buffer_frames = 512;
 int buffer_length = 1024;
 
+typedef struct _client_para
+{
+    snd_pcm_t *handle;
+    int pipe_fd[2];
+}client_para;
+
 /*** plugin interface functions ***/
 int input_init(input_parameter *param) {
     int i;
-    plugin_number = id;
-
     param->argv[0] = INPUT_PLUGIN_NAME;
 
     /* show all parameters for DBG purposes */
@@ -130,46 +131,35 @@ int input_init(input_parameter *param) {
 //    IPRINT("delay.............: %i\n", delay);
 
 
-    param->global->in[id].name = malloc((strlen(INPUT_PLUGIN_NAME) + 1) * sizeof(char));
-    sprintf(param->global->in[id].name, INPUT_PLUGIN_NAME);
-    /* allocate memory for frame */
-    param->global->in[id].buf = malloc(buffer_frames * snd_pcm_format_width(format)/8 * channels);
-    if(param->global->in[plugin_number].buf == NULL) {
-        fprintf(stderr, "could not allocate memory\n");
-        return 1;
-    }
+    param->global->in.name = malloc((strlen(INPUT_PLUGIN_NAME) + 1) * sizeof(char));
+    sprintf(param->global->in.name, INPUT_PLUGIN_NAME);
 
     return 0;
 }
 
 int input_stop() {
     DBG("will cancel input thread\n");
-    pthread_cancel(worker);
     return 0;
 }
 
 int input_run()
 {
-    /*init alsa*/
-    if (init_alsa()) {
-        IPRINT("init_alsa failed\n");
-        closelog();
-        return 1;
-    }
+    return 0;
+}
 
-    if( pthread_create(&worker, 0, worker_thread, NULL) != 0) {
-        free(pglobal->in[id].buf);
+int input_add(int* pipe_fd)
+{
+    client_para cli_para;
+    cli_para.pipe_fd[0] = pipe_fd[0];
+    cli_para.pipe_fd[1] = pipe_fd[1];
+    init_alsa(&cli_para.handle,dev,rate,format,channels);
+
+    if( pthread_create(&worker, 0, worker_thread, (void *)&cli_para) != 0) {
         fprintf(stderr, "could not start worker thread\n");
         exit(EXIT_FAILURE);
     }
 
     pthread_detach(worker);
-
-    return 0;
-}
-
-int input_add(int id)
-{
     return 0;
 }
 
@@ -189,37 +179,30 @@ void help(void) {
 
 /* the single writer thread */
 void *worker_thread( void *arg ) {
+    client_para* cli_para = (client_para*)arg;
     int err;
     int buffer_frames = 512;
     int buffer_length = buffer_frames * snd_pcm_format_width(format)/8 * channels;
     char buffer[buffer_length];
     /* set cleanup handler to cleanup allocated ressources */
     pthread_cleanup_push(worker_cleanup, NULL);
+    close(cli_para->pipe_fd[0]);
     while( !pglobal->stop ) {
-        pthread_mutex_lock(&pglobal->in[plugin_number].db);
-        if ((err = snd_pcm_readi (capture_handle, buffer, buffer_frames)) != buffer_frames) {
+        if ((err = snd_pcm_readi (cli_para->handle, buffer, buffer_frames)) != buffer_frames) {
             fprintf (stderr, "read from audio interface failed %d:(%s)\n",
                      err, snd_strerror (err));
-            free(pglobal->in[plugin_number].buf);
-            pglobal->in[plugin_number].size = 0;
             break;
         }
         /* copy frame from alsa to global buffer */
         DBG("read frame from alsa\n");
-
-//        DBG("input locked\n");
-        memcpy(pglobal->in[plugin_number].buf, buffer, buffer_length);
-        pglobal->in[plugin_number].size = buffer_length;
-//        DBG(pglobal->in[plugin_number].buf);
-        /* signal fresh_frame */
-        pthread_cond_broadcast(&pglobal->in[plugin_number].db_update);
-//        DBG("signaled all wait thread\n");
-        pthread_mutex_unlock(&pglobal->in[plugin_number].db );
-//        DBG("input unlocked\n");
+        if ((err = write(cli_para->pipe_fd[1],buffer,buffer_length))<=0) {
+            break;
+        }
     }
     DBG("leaving input thread, calling cleanup function now\n");
     pthread_cleanup_pop(1);
-
+    close(cli_para->pipe_fd[1]);
+    snd_pcm_close(cli_para->handle);
     return NULL;
 }
 
@@ -233,97 +216,8 @@ void worker_cleanup(void *arg) {
 
 
     first_run = 0;
-    DBG("cleaning up ressources allocated by input thread\n");
-    if(pglobal->in[plugin_number].buf != NULL)
-        free(pglobal->in[plugin_number].buf);
-
-    snd_pcm_close (capture_handle);
     DBG("audio interface closed\n");
 }
 
-int init_alsa()
-{
-    int err;
-    snd_pcm_hw_params_t *hw_params;
-
-    if ((err = snd_pcm_open (&capture_handle, dev, SND_PCM_STREAM_CAPTURE, 0)) < 0) {
-        fprintf (stderr, "cannot open audio device %s (%s)\n",
-                 dev,
-                snd_strerror (err));
-        return 1;
-    }
-
-    fprintf(stdout, "audio interface opened\n");
-
-    if ((err = snd_pcm_hw_params_malloc (&hw_params)) < 0) {
-        fprintf (stderr, "cannot allocate hardware parameter structure (%s)\n",
-                 snd_strerror (err));
-        return 1;
-    }
-
-    fprintf(stdout, "hw_params allocated\n");
-
-    if ((err = snd_pcm_hw_params_any (capture_handle, hw_params)) < 0) {
-        fprintf (stderr, "cannot initialize hardware parameter structure (%s)\n",
-                 snd_strerror (err));
-        return 1;
-    }
-
-    fprintf(stdout, "hw_params initialized\n");
-
-    if ((err = snd_pcm_hw_params_set_access (capture_handle, hw_params, SND_PCM_ACCESS_RW_INTERLEAVED)) < 0) {
-        fprintf (stderr, "cannot set access type (%s)\n",
-                 snd_strerror (err));
-        return 1;
-    }
-
-    fprintf(stdout, "hw_params access setted\n");
-
-    if ((err = snd_pcm_hw_params_set_format (capture_handle, hw_params, format)) < 0) {
-        fprintf (stderr, "cannot set sample format (%s)\n",
-                 snd_strerror (err));
-        return 1;
-    }
-
-    fprintf(stdout, "hw_params format setted\n");
-
-    if ((err = snd_pcm_hw_params_set_rate_near (capture_handle, hw_params, &rate, 0)) < 0) {
-        fprintf (stderr, "cannot set sample rate (%s)\n",
-                 snd_strerror (err));
-        return 1;
-    }
-
-    fprintf(stdout, "hw_params rate setted\n");
-
-    if ((err = snd_pcm_hw_params_set_channels (capture_handle, hw_params, channels)) < 0) {
-        fprintf (stderr, "cannot set channel count (%s)\n",
-                 snd_strerror (err));
-        return 1;
-    }
-
-    fprintf(stdout, "hw_params channels setted\n");
-
-    if ((err = snd_pcm_hw_params (capture_handle, hw_params)) < 0) {
-        fprintf (stderr, "cannot set parameters (%s)\n",
-                 snd_strerror (err));
-        return 1;
-    }
-
-    fprintf(stdout, "hw_params setted\n");
-
-    snd_pcm_hw_params_free (hw_params);
-
-    fprintf(stdout, "hw_params freed\n");
-
-    if ((err = snd_pcm_prepare (capture_handle)) < 0) {
-        fprintf (stderr, "cannot prepare audio interface for use (%s)\n",
-                 snd_strerror (err));
-        return 1;
-    }
-
-    fprintf(stdout, "audio interface prepared\n");
-
-    return 0;
-}
 
 
