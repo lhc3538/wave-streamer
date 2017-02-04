@@ -6,7 +6,7 @@
 #define MAX_PLUGIN_ARGUMENTS 32
 #define MAX_USERS 100
 
-#define DEBUG 1
+#define DEBUG
 #ifdef DEBUG
 #define DBG(...) fprintf(stderr, " DBG(%s, %s(), %d): ", __FILE__, __FUNCTION__, __LINE__); fprintf(stderr, __VA_ARGS__)
 #else
@@ -30,11 +30,6 @@ struct _globals {
     /* output plugin */
     output out;
 
-    /*mutex for stop and pipe_fds*/
-    pthread_mutex_t mutex;
-
-    /*data pipes*/
-    int pipe_fds[MAX_USERS][2];
 };
 
 #endif

@@ -31,7 +31,6 @@ char *dev = "default";
 snd_pcm_format_t format = SND_PCM_FORMAT_S16_LE;
 unsigned int rate = 16000;
 unsigned int channels = 1;
-snd_pcm_t *capture_handle;
 int buffer_frames = 512;
 int buffer_length = 1024;
 
@@ -147,14 +146,13 @@ int input_run()
     return 0;
 }
 
-int input_add(int* pipe_fd)
+int input_add(int pipe_fd)
 {
-    client_para cli_para;
-    cli_para.pipe_fd[0] = pipe_fd[0];
-    cli_para.pipe_fd[1] = pipe_fd[1];
-    init_alsa(&cli_para.handle,dev,rate,format,channels);
+//    client_para cli_para;
+//    cli_para.pipe_fd[0] = pipe_fd[0];
+//    cli_para.pipe_fd[1] = pipe_fd[1];
 
-    if( pthread_create(&worker, 0, worker_thread, (void *)&cli_para) != 0) {
+    if( pthread_create(&worker, 0, worker_thread, (void *)pipe_fd) != 0) {
         fprintf(stderr, "could not start worker thread\n");
         exit(EXIT_FAILURE);
     }
@@ -179,30 +177,34 @@ void help(void) {
 
 /* the single writer thread */
 void *worker_thread( void *arg ) {
-    client_para* cli_para = (client_para*)arg;
+//    client_para* cli_para = (client_para*)arg;
+    int output_fd = (int) arg;
+    snd_pcm_t *capture_handle;
+    init_alsa(&capture_handle,dev,rate,format,channels);
     int err;
     int buffer_frames = 512;
     int buffer_length = buffer_frames * snd_pcm_format_width(format)/8 * channels;
     char buffer[buffer_length];
     /* set cleanup handler to cleanup allocated ressources */
     pthread_cleanup_push(worker_cleanup, NULL);
-    close(cli_para->pipe_fd[0]);
+//    close(cli_para->pipe_fd[0]);
     while( !pglobal->stop ) {
-        if ((err = snd_pcm_readi (cli_para->handle, buffer, buffer_frames)) != buffer_frames) {
+        if ((err = snd_pcm_readi (capture_handle, buffer, buffer_frames)) != buffer_frames) {
             fprintf (stderr, "read from audio interface failed %d:(%s)\n",
                      err, snd_strerror (err));
             break;
         }
         /* copy frame from alsa to global buffer */
-        DBG("read frame from alsa\n");
-        if ((err = write(cli_para->pipe_fd[1],buffer,buffer_length))<=0) {
+        //DBG("read frame from alsa\n");
+        if ((err = write(output_fd,buffer,buffer_length))<=0) {
+            perror( "write output_fd filed");
             break;
         }
     }
     DBG("leaving input thread, calling cleanup function now\n");
     pthread_cleanup_pop(1);
-    close(cli_para->pipe_fd[1]);
-    snd_pcm_close(cli_para->handle);
+//    close(cli_para->pipe_fd[1]);
+    snd_pcm_close(capture_handle);
     return NULL;
 }
 

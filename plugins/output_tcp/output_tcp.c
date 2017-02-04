@@ -24,12 +24,7 @@
 static pthread_t worker;
 static globals *pglobal;
 
-typedef struct _client_para
-{
-    int sock_fd;
-    int pipe_fd[2];
-}client_para;
-
+int port = 8081,queue = 20;
 /******************************************************************************
 Description.: print a help message
 Input Value.: -
@@ -71,38 +66,6 @@ void worker_cleanup(void *arg) {
 
 }
 
-void* process_client(void *arg)
-{
-    client_para* cli_para = (client_para*)arg;
-    int sock_cli = cli_para->sock_fd;
-    int pipe_fd[2];
-    pipe_fd[0] = cli_para->pipe_fd[0];
-    pipe_fd[1] = cli_para->pipe_fd[1];
-
-    int len;
-    char buf[1024];
-
-    /*关闭写描述符*/
-    close(pipe_fd[1]);
-    while(!pglobal->stop)
-    {
-
-        len = read(pipe_fd[0],buf,sizeof(buf));
-        if (len <= 0)
-            break;
-        len = send(sock_cli, buf, sizeof(buf),0);
-        //客户端发送exit或者异常结束时，退出
-        if(len <= 0)
-            break;
-        DBG("send：%s\n",buf);
-    }
-    /*关闭read描述符*/
-    close(pipe_fd[0]);
-    close(sock_cli);
-
-    return NULL;
-}
-
 /******************************************************************************
 Description.: this is the main worker thread
               it loops forever, grabs a fresh frame and stores it to file
@@ -112,7 +75,7 @@ Return Value:
 void *worker_thread( void *arg )
 {
     /*create socket fd*/
-    int server_sockfd = passive_server(8081,20);
+    int server_sockfd = passive_server(port,queue);
 
     struct sockaddr_in client_addr;
     socklen_t length = sizeof(client_addr);
@@ -130,29 +93,7 @@ void *worker_thread( void *arg )
             exit(1);
         }
         DBG("客户端成功连接,socketID=%d\n",conn);
-
-        /*create pipe*/
-        int pipe_fd[2];
-        if (pipe(pipe_fd) < 0)
-        {
-            perror("create pipe error");
-            continue;
-        }
-        pglobal->in.add(pipe_fd);
-
-        client_para cli_para;
-        cli_para.sock_fd = conn;
-        cli_para.pipe_fd[0] = pipe_fd[0];
-        cli_para.pipe_fd[1] = pipe_fd[1];
-
-        pthread_t  pid;
-        int ret;
-        ret = pthread_create(&pid,NULL,(void*)process_client,(void*)&cli_para); // 成功返回0，错误返回错误编号
-        if (ret < 0)
-        {
-            perror("pthread_create error");
-        }
-        pthread_detach(pid);
+        pglobal->in.add(conn);
     }
     close(server_sockfd);
     pthread_cleanup_pop(1);
@@ -189,8 +130,10 @@ int output_init(output_parameter *param)
         {
         {"h", no_argument, 0, 0},
         {"help", no_argument, 0, 0},
-        {"f", required_argument, 0, 0},
-        {"folder", required_argument, 0, 0},
+        {"p", required_argument, 0, 0},
+        {"port", required_argument, 0, 0},
+        {"q", required_argument, 0, 0},
+        {"queue", required_argument, 0, 0},
         {0, 0, 0, 0}
     };
 
@@ -214,11 +157,24 @@ int output_init(output_parameter *param)
             return 1;
             break;
 
-            /* f, folder */
+        /* p, port */
         case 2:
         case 3:
             DBG("case 2,3\n");
+            port = atoi(optarg);
             break;
+
+        /* q, queue */
+        case 4:
+        case 5:
+            queue = atoi(optarg);
+            DBG("case 4,5\n");
+            break;
+
+        default:
+            DBG("default case\n");
+            help();
+            return 1;
         }
     }
 
@@ -250,3 +206,6 @@ int output_run() {
     return 0;
 }
 
+int output_add() {
+    return 0;
+}

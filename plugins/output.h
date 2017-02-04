@@ -5,7 +5,6 @@
 /* parameters for output plugin */
 typedef struct _output_parameter output_parameter;
 struct _output_parameter {
-    int id;
     char *parameters;
     int argc;
     char *argv[MAX_PLUGIN_ARGUMENTS];
@@ -30,7 +29,7 @@ struct _output {
     pthread_t thread_id[MAX_USERS];
     int thread_count;
 
-    int (*init)(input_parameter *);
+    int (*init)(output_parameter *);
     int (*stop)();
     int (*run)();
     int (*add)(int*);

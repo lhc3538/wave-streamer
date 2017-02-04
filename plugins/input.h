@@ -6,7 +6,6 @@
 /* parameters for input plugin */
 typedef struct _input_parameter input_parameter;
 struct _input_parameter {
-    int id;
     char *parameters;
     int argc;
     char *argv[MAX_PLUGIN_ARGUMENTS];
@@ -32,5 +31,5 @@ struct _input {
     int (*init)(input_parameter *);
     int (*stop)();
     int (*run)();
-    int (*add)(int*);
+    int (*add)(int);
 };
