@@ -10,7 +10,8 @@ SOURCES += \
     plugins/input_alsa/input_alsa.c \
     plugins/output_http/output_http.c \
     plugins/output_tcp/output_tcp.c \
-    utils.c
+    utils.c \
+    plugins/output_http/httpd.c
 
 HEADERS += \
     wave_streamer.h \
@@ -19,4 +20,14 @@ HEADERS += \
     plugins/input.h \
     plugins/output.h \
     plugins/output_tcp/output_tcp.h \
-    utils.h
+    utils.h \
+    plugins/output_http/httpd.h
+
+DISTFILES += \
+    wave_streamer \
+    plugins/input_alsa/input_alsa.so \
+    plugins/output_tcp/output_tcp.so \
+    input_alsa.so \
+    output_tcp.so \
+    start.sh \
+    test.sh
