@@ -50,6 +50,23 @@
 static globals *pglobal;
 int port = 8080,queue = 20;
 
+typedef struct
+{
+    char chRIFF[4];                 // "RIFF" 标志
+    int  total_Len;                 // 文件长度
+    char chWAVE[4];                 // "WAVE" 标志
+    char chFMT[4];                  // "fmt" 标志
+    int  dwFMTLen;                  // 过渡字节（不定）  一般为16
+    short fmt_pcm;                  // 格式类别
+    short  channels;                // 声道数
+    int fmt_samplehz;               // 采样率
+    int fmt_bytepsec;               // 位速
+    short fmt_bytesample;           // 一个采样多声道数据块大小
+    short fmt_bitpsample;
+    // 一个采样占的 bit 数
+    char chDATA[4];                 // 数据标记符＂data ＂
+    int  dwDATALen;                 // 语音数据的长度，比文件长度小42一般。这个是计算音频播放时长的关键参数~
+}wave_header;
 /******************************************************************************
 Description.: initializes the iobuffer structure properly
 Input Value.: pointer to already allocated iobuffer
@@ -279,43 +296,75 @@ void send_stream(int context_fd)
 
     DBG("preparing header\n");
     sprintf(head, "HTTP/1.0 200 OK\r\n" \
+            "Content-type: audio/wav\r\n" \
             STD_HEADER \
-            "Content-Type: audio/wav;boundary=" BOUNDARY "\r\n" \
-            "\r\n" \
-            "--" BOUNDARY "\r\n");
+            "\r\n");
 
     if(write(context_fd, head, strlen(head)) < 0) {
         return;
     }
 
-    DBG("Headers send, sending stream now\n");
+    DBG("Response Headers send\n");
 
+//    wave_header wav_head_data = {
+//        "RIFF",
+//        2147483647 ,
+//        "WAVE",
+//        "fmt ",
+//        16,
+//        1,
+//        2,
+//        16000,
+//        16000*16,
+//        32,
+//        16,
+//        "data",
+//        2147483647
+//    };
+//    sprintf(head, "Content-Type: audio/wav\r\n" \
+//            "Content-Length: %d\r\n" \
+//            "X-Timestamp: %d.%06d\r\n" \
+//            "\r\n", sizeof(wave_header), (int)timestamp.tv_sec, (int)timestamp.tv_usec);
+//    DBG("sending intemdiate header\n");
+//    if(write(context_fd, head, strlen(head)) < 0) return;
+//    if(write(context_fd, (char*)&wav_head_data, sizeof(wav_head_data)) < 0) return;
+    /* 打开源文件 */
+    int file_fd;
+    if ((file_fd = open("./test.wav", O_RDONLY)) == -1) {
+        fprintf(stderr, "Open  Error\n");
+        exit(1);
+    }
+    DBG("sending intemdiate header\n");
     while(!pglobal->stop) {
         /*
          * print the individual mimetype and the length
          * sending the content-length fixes random stream disruption observed
          * with firefox
          */
-        sprintf(head, "Content-Type: audio/wav\r\n" \
-                "Content-Length: %d\r\n" \
-                "X-Timestamp: %d.%06d\r\n" \
-                "\r\n", buffer_length, (int)timestamp.tv_sec, (int)timestamp.tv_usec);
-        DBG("sending intemdiate header\n");
-        if(write(context_fd, head, strlen(head)) < 0) break;
 
-        if ((err = snd_pcm_readi (capture_handle, buffer, buffer_frames)) != buffer_frames) {
+
+//        if ((err = snd_pcm_readi (capture_handle, buffer, buffer_frames)) != buffer_frames) {
+//            fprintf (stderr, "read from audio interface failed %d:(%s)\n",
+//                     err, snd_strerror (err));
+//            break;
+//        }
+        usleep(1456);
+        err = read(file_fd, buffer, buffer_length);
+        if (err <= 0)
+        {
             fprintf (stderr, "read from audio interface failed %d:(%s)\n",
-                     err, snd_strerror (err));
+                                 err, snd_strerror (err));
             break;
         }
 
         DBG("sending frame\n");
         if(write(context_fd, buffer, buffer_length) < 0) break;
 
-        DBG("sending boundary\n");
-        sprintf(head, "\r\n--" BOUNDARY "\r\n");
-        if(write(context_fd, head, strlen(head)) < 0) break;
+//        DBG("sending boundary\n");
+//        sprintf(head, "\r\n--" BOUNDARY "\r\n");
+//        if(write(context_fd, head, strlen(head)) < 0) break;
     }
+    DBG("had breaked\n");
 }
 
 /******************************************************************************
