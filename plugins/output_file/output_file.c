@@ -17,11 +17,30 @@
 
 #include "../../utils.h"
 #include "../../wave_streamer.h"
+#include "../../tools/alsa.h"
 
 #define OUTPUT_PLUGIN_NAME "file output plugin"
 
 static pthread_t worker;
 static globals *pglobal;
+
+typedef struct
+{
+    char chRIFF[4];                 // "RIFF" 标志
+    int  total_Len;                 // 文件长度
+    char chWAVE[4];                 // "WAVE" 标志
+    char chFMT[4];                  // "fmt" 标志
+    int  dwFMTLen;                  // 过渡字节（不定）  一般为16
+    short fmt_pcm;                  // 格式类别
+    short  channels;                // 声道数
+    int fmt_samplehz;               // 采样率
+    int fmt_bytepsec;               // 位速
+    short fmt_bytesample;           // 一个采样多声道数据块大小
+    short fmt_bitpsample;
+    // 一个采样占的 bit 数
+    char chDATA[4];                 // 数据标记符＂data ＂
+    int  dwDATALen;                 // 语音数据的长度，比文件长度小42一般。这个是计算音频播放时长的关键参数~
+}wave_header;
 
 /******************************************************************************
 Description.: print a help message
@@ -72,28 +91,69 @@ Return Value:
 ******************************************************************************/
 void *worker_thread( void *arg )
 {
-    /*create socket fd*/
-    int server_sockfd = passive_server(port,queue);
+    //alsa init parameter
+    char *dev = "default";
+    snd_pcm_format_t format = SND_PCM_FORMAT_S16_LE;
+    unsigned int rate = 16000;
+    unsigned int channels = 1;
 
-    struct sockaddr_in client_addr;
-    socklen_t length = sizeof(client_addr);
+    int err;
+    int buffer_frames = 512;
+    int buffer_length = buffer_frames * snd_pcm_format_width(format)/8 * channels;
+    char buffer[buffer_length];
+    memset(buffer,-1,buffer_length);
+
+    snd_pcm_t *capture_handle;
+    init_alsa(&capture_handle,dev,rate,format,channels);
+
+    int file_fd,size;
+    file_fd = open("/tmp/test.wav",O_WRONLY|O_CREAT);
+
+    wave_header wav_head_data = {
+        "RIFF",
+        2147483647 ,
+        "WAVE",
+        "fmt ",
+        16,
+        1,
+        1,
+        16000,
+        16000*16,
+        32,
+        16,
+        "data",
+        2147483647
+    };
+    size = write(file_fd,(char*)&wav_head_data,sizeof(wav_head_data));
+    if (size <= 0)
+    {
+        fprintf(stderr,"write file err\n");
+    }
+
+    int test_count =250;
     /* set cleanup handler to cleanup allocated ressources */
     pthread_cleanup_push(worker_cleanup, NULL);
     while(!pglobal->stop)
     {
-        DBG("等待客户端连接\n");
-
-        ///成功返回非负描述字，出错返回-1
-        int conn = accept(server_sockfd, (struct sockaddr*)&client_addr, &length);
-        if(conn<0)
+        if (test_count != 0)
+            --test_count;
+        else
         {
-            perror("connect");
-            exit(1);
+            if ((err = snd_pcm_readi (capture_handle, buffer, buffer_frames)) != buffer_frames) {
+                fprintf (stderr, "read from audio interface failed %d:(%s)\n",
+                         err, snd_strerror (err));
+                break;
+            }
         }
-        DBG("客户端成功连接,socketID=%d\n",conn);
-        pglobal->in.add(conn);
+        size = write(file_fd,buffer,buffer_length);
+        if (size <= 0)
+        {
+            fprintf(stderr,"write file err\n");
+            break;
+        }
     }
-    close(server_sockfd);
+    close(file_fd);
+    snd_pcm_close(capture_handle);
     pthread_cleanup_pop(1);
     return NULL;
 }
@@ -159,13 +219,13 @@ int output_init(output_parameter *param)
         case 2:
         case 3:
             DBG("case 2,3\n");
-            port = atoi(optarg);
+//            port = atoi(optarg);
             break;
 
         /* q, queue */
         case 4:
         case 5:
-            queue = atoi(optarg);
+//            queue = atoi(optarg);
             DBG("case 4,5\n");
             break;
 

@@ -46,10 +46,6 @@
 #include "httpd.h"
 
 #define MAX_CLIENTS 100
-
-static globals *pglobal;
-int port = 8080,queue = 20;
-
 typedef struct
 {
     char chRIFF[4];                 // "RIFF" 标志
@@ -67,6 +63,8 @@ typedef struct
     char chDATA[4];                 // 数据标记符＂data ＂
     int  dwDATALen;                 // 语音数据的长度，比文件长度小42一般。这个是计算音频播放时长的关键参数~
 }wave_header;
+static globals *pglobal;
+int port = 8080,queue = 20;
 /******************************************************************************
 Description.: initializes the iobuffer structure properly
 Input Value.: pointer to already allocated iobuffer
@@ -289,6 +287,7 @@ void send_stream(int context_fd)
     int buffer_frames = 512;
     int buffer_length = buffer_frames * snd_pcm_format_width(format)/8 * channels;
     char buffer[buffer_length];
+    memset(buffer,0,buffer_length);
 
     char head[BUFFER_SIZE] = {0};
     struct timeval timestamp;
@@ -306,35 +305,36 @@ void send_stream(int context_fd)
 
     DBG("Response Headers send\n");
 
-//    wave_header wav_head_data = {
-//        "RIFF",
-//        2147483647 ,
-//        "WAVE",
-//        "fmt ",
-//        16,
-//        1,
-//        2,
-//        16000,
-//        16000*16,
-//        32,
-//        16,
-//        "data",
-//        2147483647
-//    };
+    wave_header wav_head_data = {
+        "RIFF",
+        2147483647 ,
+        "WAVE",
+        "fmt ",
+        16,
+        1,
+        1,
+        16000,
+        16000*16,
+        32,
+        16,
+        "data",
+        2147483647
+    };
 //    sprintf(head, "Content-Type: audio/wav\r\n" \
 //            "Content-Length: %d\r\n" \
 //            "X-Timestamp: %d.%06d\r\n" \
 //            "\r\n", sizeof(wave_header), (int)timestamp.tv_sec, (int)timestamp.tv_usec);
 //    DBG("sending intemdiate header\n");
 //    if(write(context_fd, head, strlen(head)) < 0) return;
-//    if(write(context_fd, (char*)&wav_head_data, sizeof(wav_head_data)) < 0) return;
+    if(write(context_fd, (char*)&wav_head_data, sizeof(wav_head_data)) < 0) return;
     /* 打开源文件 */
-    int file_fd;
-    if ((file_fd = open("./test.wav", O_RDONLY)) == -1) {
-        fprintf(stderr, "Open  Error\n");
-        exit(1);
-    }
-    DBG("sending intemdiate header\n");
+//    int file_fd;
+//    if ((file_fd = open("./test.wav", O_RDONLY)) == -1) {
+//        fprintf(stderr, "Open  Error\n");
+//        exit(1);
+//    }
+//    DBG("sending intemdiate header\n");
+    int test_count =250;
     while(!pglobal->stop) {
         /*
          * print the individual mimetype and the length
@@ -342,20 +342,25 @@ void send_stream(int context_fd)
          * with firefox
          */
 
+        if (test_count != 0)
+            --test_count;
+        else
+        {
+            if ((err = snd_pcm_readi (capture_handle, buffer, buffer_frames)) != buffer_frames) {
+                fprintf (stderr, "read from audio interface failed %d:(%s)\n",
+                         err, snd_strerror (err));
+                break;
+            }
+        }
 
-//        if ((err = snd_pcm_readi (capture_handle, buffer, buffer_frames)) != buffer_frames) {
+//        usleep(1456);
+//        err = read(file_fd, buffer, buffer_length);
+//        if (err <= 0)
+//        {
 //            fprintf (stderr, "read from audio interface failed %d:(%s)\n",
-//                     err, snd_strerror (err));
+//                                 err, snd_strerror (err));
 //            break;
 //        }
-        usleep(1456);
-        err = read(file_fd, buffer, buffer_length);
-        if (err <= 0)
-        {
-            fprintf (stderr, "read from audio interface failed %d:(%s)\n",
-                                 err, snd_strerror (err));
-            break;
-        }
 
         DBG("sending frame\n");
         if(write(context_fd, buffer, buffer_length) < 0) break;
