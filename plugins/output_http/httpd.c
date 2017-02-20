@@ -66,6 +66,7 @@ typedef struct
 
 static globals *pglobal;
 int port = 8080,queue = 20;
+char *www_folder = "./www/";
 int server_sockfd ;
 /******************************************************************************
 Description.: initializes the iobuffer structure properly
@@ -297,7 +298,7 @@ void send_stream(int context_fd)
 
     DBG("preparing header\n");
     sprintf(head, "HTTP/1.0 200 OK\r\n" \
-            "Content-type: audio/wav\r\n" \
+                  "Content-type: audio/wav\r\n" \
             STD_HEADER \
             "\r\n");
 
@@ -322,20 +323,20 @@ void send_stream(int context_fd)
         "data",
         0
     };
-//    sprintf(head, "Content-Type: audio/wav\r\n" \
-//            "Content-Length: %d\r\n" \
-//            "X-Timestamp: %d.%06d\r\n" \
-//            "\r\n", sizeof(wave_header), (int)timestamp.tv_sec, (int)timestamp.tv_usec);
-//    DBG("sending intemdiate header\n");
-//    if(write(context_fd, head, strlen(head)) < 0) return;
+    //    sprintf(head, "Content-Type: audio/wav\r\n" \
+    //            "Content-Length: %d\r\n" \
+    //            "X-Timestamp: %d.%06d\r\n" \
+    //            "\r\n", sizeof(wave_header), (int)timestamp.tv_sec, (int)timestamp.tv_usec);
+    //    DBG("sending intemdiate header\n");
+    //    if(write(context_fd, head, strlen(head)) < 0) return;
     if(write(context_fd, (char*)&wav_head_data, sizeof(wav_head_data)) < 0) return;
     /* 打开源文件 */
-//    int file_fd;
-//    if ((file_fd = open("./test.wav", O_RDONLY)) == -1) {
-//        fprintf(stderr, "Open  Error\n");
-//        exit(1);
-//    }
-//    DBG("sending intemdiate header\n");
+    //    int file_fd;
+    //    if ((file_fd = open("./test.wav", O_RDONLY)) == -1) {
+    //        fprintf(stderr, "Open  Error\n");
+    //        exit(1);
+    //    }
+    //    DBG("sending intemdiate header\n");
     while(!pglobal->stop) {
         /*
          * print the individual mimetype and the length
@@ -349,25 +350,110 @@ void send_stream(int context_fd)
             break;
         }
 
-//        usleep(1456);
-//        err = read(file_fd, buffer, buffer_length);
-//        if (err <= 0)
-//        {
-//            fprintf (stderr, "read from audio interface failed %d:(%s)\n",
-//                                 err, snd_strerror (err));
-//            break;
-//        }
+        //        usleep(1456);
+        //        err = read(file_fd, buffer, buffer_length);
+        //        if (err <= 0)
+        //        {
+        //            fprintf (stderr, "read from audio interface failed %d:(%s)\n",
+        //                                 err, snd_strerror (err));
+        //            break;
+        //        }
 
         DBG("sending frame\n");
         if(write(context_fd, buffer, buffer_length) < 0) break;
 
-//        DBG("sending boundary\n");
-//        sprintf(head, "\r\n--" BOUNDARY "\r\n");
-//        if(write(context_fd, head, strlen(head)) < 0) break;
+        //        DBG("sending boundary\n");
+        //        sprintf(head, "\r\n--" BOUNDARY "\r\n");
+        //        if(write(context_fd, head, strlen(head)) < 0) break;
     }
     snd_pcm_close(capture_handle);
-    close(context_fd);
     DBG("had breaked\n");
+}
+
+
+/******************************************************************************
+Description.: Send HTTP header and copy the content of a file. To keep things
+              simple, just a single folder gets searched for the file. Just
+              files with known extension and supported mimetype get served.
+              If no parameter was given, the file "index.html" will be copied.
+Input Value.: * fd.......: filedescriptor to send data to
+              * id.......: specifies which server-context is the right one
+              * parameter: string that consists of the filename
+Return Value: -
+******************************************************************************/
+void send_file(int fd, char *parameter)
+{
+    char buffer[BUFFER_SIZE] = {0};
+    char *extension, *mimetype = NULL;
+    int i, lfd;
+
+    /* in case no parameter was given */
+    if(parameter == NULL || strlen(parameter) == 0)
+        parameter = "index.html";
+
+    /* find file-extension */
+    char * pch;
+    pch = strchr(parameter, '.');
+    int lastDot = 0;
+    while(pch != NULL) {
+        lastDot = pch - parameter;
+        pch = strchr(pch + 1, '.');
+    }
+
+    if(lastDot == 0) {
+        send_error(fd, 400, "No file extension found");
+        return;
+    } else {
+        extension = parameter + lastDot;
+        DBG("%s EXTENSION: %s\n", parameter, extension);
+    }
+
+    /* determine mime-type */
+    for(i = 0; i < LENGTH_OF(mimetypes); i++) {
+        if(strcmp(mimetypes[i].dot_extension, extension) == 0) {
+            mimetype = (char *)mimetypes[i].mimetype;
+            break;
+        }
+    }
+
+    /* in case of unknown mimetype or extension leave */
+    if(mimetype == NULL) {
+        send_error(fd, 404, "MIME-TYPE not known");
+        return;
+    }
+
+    /* now filename, mimetype and extension are known */
+    DBG("trying to serve file \"%s\", extension: \"%s\" mime: \"%s\"\n", parameter, extension, mimetype);
+
+    /* build the absolute path to the file */
+    strncat(buffer, www_folder, sizeof(buffer) - 1);
+    strncat(buffer, parameter, sizeof(buffer) - strlen(buffer) - 1);
+
+    /* try to open that file */
+    if((lfd = open(buffer, O_RDONLY)) < 0) {
+        DBG("file %s not accessible\n", buffer);
+        send_error(fd, 404, "Could not open file");
+        return;
+    }
+    DBG("opened file: %s\n", buffer);
+
+    /* prepare HTTP header */
+    sprintf(buffer, "HTTP/1.0 200 OK\r\n" \
+            "Content-type: %s\r\n" \
+            STD_HEADER \
+            "\r\n", mimetype);
+    i = strlen(buffer);
+
+    /* first transmit HTTP-header, afterwards transmit content of file */
+    do {
+        if(write(fd, buffer, i) < 0) {
+            close(lfd);
+            return;
+        }
+    } while((i = read(lfd, buffer, sizeof(buffer))) > 0);
+
+    /* close file, job done */
+    close(lfd);
 }
 
 /******************************************************************************
@@ -383,7 +469,7 @@ void send_error(int fd, int which, char *message)
 
     if(which == 401) {
         sprintf(buffer, "HTTP/1.0 401 Unauthorized\r\n" \
-                "Content-type: text/plain\r\n" \
+                        "Content-type: text/plain\r\n" \
                 STD_HEADER \
                 "WWW-Authenticate: Basic realm=\"MJPG-Streamer\"\r\n" \
                 "\r\n" \
@@ -391,35 +477,35 @@ void send_error(int fd, int which, char *message)
                 "%s", message);
     } else if(which == 404) {
         sprintf(buffer, "HTTP/1.0 404 Not Found\r\n" \
-                "Content-type: text/plain\r\n" \
+                        "Content-type: text/plain\r\n" \
                 STD_HEADER \
                 "\r\n" \
                 "404: Not Found!\r\n" \
                 "%s", message);
     } else if(which == 500) {
         sprintf(buffer, "HTTP/1.0 500 Internal Server Error\r\n" \
-                "Content-type: text/plain\r\n" \
+                        "Content-type: text/plain\r\n" \
                 STD_HEADER \
                 "\r\n" \
                 "500: Internal Server Error!\r\n" \
                 "%s", message);
     } else if(which == 400) {
         sprintf(buffer, "HTTP/1.0 400 Bad Request\r\n" \
-                "Content-type: text/plain\r\n" \
+                        "Content-type: text/plain\r\n" \
                 STD_HEADER \
                 "\r\n" \
                 "400: Not Found!\r\n" \
                 "%s", message);
     } else if (which == 403) {
         sprintf(buffer, "HTTP/1.0 403 Forbidden\r\n" \
-                "Content-type: text/plain\r\n" \
+                        "Content-type: text/plain\r\n" \
                 STD_HEADER \
                 "\r\n" \
                 "403: Forbidden!\r\n" \
                 "%s", message);
     } else {
         sprintf(buffer, "HTTP/1.0 501 Not Implemented\r\n" \
-                "Content-type: text/plain\r\n" \
+                        "Content-type: text/plain\r\n" \
                 STD_HEADER \
                 "\r\n" \
                 "501: Not Implemented!\r\n" \
@@ -541,6 +627,12 @@ void *client_thread(void *arg)
         DBG("Request for stream from input: \n");
         send_stream(client_fd);
         break;
+    case A_FILE:
+        if(www_folder == NULL)
+            send_error(client_fd, 501, "no www-folder configured");
+        else
+            send_file(client_fd, req.parameter);
+        break;
     default:
         DBG("unknown request\n");
     }
@@ -577,7 +669,7 @@ void *server_thread(void *arg)
     pthread_t client;
     /*create socket fd*/
     server_sockfd = passive_server(port,queue);
-DBG("1\n");
+    DBG("1\n");
     struct sockaddr_in client_addr;
     socklen_t length = sizeof(client_addr);
     /* set cleanup handler to cleanup allocated ressources */
@@ -597,7 +689,7 @@ DBG("1\n");
         DBG("客户端成功连接,socketID=%d\n",conn);
         pthread_create(&client, NULL, &client_thread, (void*)conn);
         pthread_detach(client);
-//        pglobal->in.add(conn);
+        //        pglobal->in.add(conn);
     }
     DBG("close server\n");
     close(server_sockfd);

@@ -12,7 +12,8 @@ SOURCES += \
     plugins/output_tcp/output_tcp.c \
     utils.c \
     plugins/output_http/httpd.c \
-    plugins/output_file/output_file.c
+    plugins/output_file/output_file.c \
+    plugins/output_websocket/output_websocket.c
 
 HEADERS += \
     wave_streamer.h \
@@ -23,7 +24,8 @@ HEADERS += \
     plugins/output_tcp/output_tcp.h \
     utils.h \
     plugins/output_http/httpd.h \
-    plugins/output_file/output_file.h
+    plugins/output_file/output_file.h \
+    plugins/output_websocket/output_websocket.h
 
 DISTFILES += \
     wave_streamer \
@@ -36,4 +38,6 @@ DISTFILES += \
     plugins/output_file/output_tcp.so \
     plugins/output_http/output_http.so \
     output_http.so \
-    test.wav
+    test.wav \
+    plugins/output_file/output_file.so \
+    output_file.so
