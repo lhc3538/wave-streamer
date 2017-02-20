@@ -111,7 +111,7 @@ void *worker_thread( void *arg )
 
     wave_header wav_head_data = {
         "RIFF",
-        2147483647 ,
+        0 ,
         "WAVE",
         "fmt ",
         16,
@@ -122,7 +122,7 @@ void *worker_thread( void *arg )
         32,
         16,
         "data",
-        2147483647
+        0
     };
     size = write(file_fd,(char*)&wav_head_data,sizeof(wav_head_data));
     if (size <= 0)
@@ -130,7 +130,7 @@ void *worker_thread( void *arg )
         fprintf(stderr,"write file err\n");
     }
 
-    int test_count =250;
+    int test_count = 0;
     /* set cleanup handler to cleanup allocated ressources */
     pthread_cleanup_push(worker_cleanup, NULL);
     while(!pglobal->stop)

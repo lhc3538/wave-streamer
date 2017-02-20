@@ -63,8 +63,10 @@ typedef struct
     char chDATA[4];                 // 数据标记符＂data ＂
     int  dwDATALen;                 // 语音数据的长度，比文件长度小42一般。这个是计算音频播放时长的关键参数~
 }wave_header;
+
 static globals *pglobal;
 int port = 8080,queue = 20;
+int server_sockfd ;
 /******************************************************************************
 Description.: initializes the iobuffer structure properly
 Input Value.: pointer to already allocated iobuffer
@@ -307,7 +309,7 @@ void send_stream(int context_fd)
 
     wave_header wav_head_data = {
         "RIFF",
-        2147483647 ,
+        0,
         "WAVE",
         "fmt ",
         16,
@@ -318,7 +320,7 @@ void send_stream(int context_fd)
         32,
         16,
         "data",
-        2147483647
+        0
     };
 //    sprintf(head, "Content-Type: audio/wav\r\n" \
 //            "Content-Length: %d\r\n" \
@@ -334,7 +336,6 @@ void send_stream(int context_fd)
 //        exit(1);
 //    }
 //    DBG("sending intemdiate header\n");
-    int test_count =250;
     while(!pglobal->stop) {
         /*
          * print the individual mimetype and the length
@@ -342,15 +343,10 @@ void send_stream(int context_fd)
          * with firefox
          */
 
-        if (test_count != 0)
-            --test_count;
-        else
-        {
-            if ((err = snd_pcm_readi (capture_handle, buffer, buffer_frames)) != buffer_frames) {
-                fprintf (stderr, "read from audio interface failed %d:(%s)\n",
-                         err, snd_strerror (err));
-                break;
-            }
+        if ((err = snd_pcm_readi (capture_handle, buffer, buffer_frames)) != buffer_frames) {
+            fprintf (stderr, "read from audio interface failed %d:(%s)\n",
+                     err, snd_strerror (err));
+            break;
         }
 
 //        usleep(1456);
@@ -369,6 +365,8 @@ void send_stream(int context_fd)
 //        sprintf(head, "\r\n--" BOUNDARY "\r\n");
 //        if(write(context_fd, head, strlen(head)) < 0) break;
     }
+    snd_pcm_close(capture_handle);
+    close(context_fd);
     DBG("had breaked\n");
 }
 
@@ -563,7 +561,8 @@ void server_cleanup(void *arg)
 {
 
     OPRINT("cleaning up ressources allocated by server thread\n");
-
+    close(server_sockfd);
+    pglobal->stop = 1;
 }
 
 /******************************************************************************
@@ -577,7 +576,7 @@ void *server_thread(void *arg)
     pglobal = (globals*) arg;
     pthread_t client;
     /*create socket fd*/
-    int server_sockfd = passive_server(port,queue);
+    server_sockfd = passive_server(port,queue);
 DBG("1\n");
     struct sockaddr_in client_addr;
     socklen_t length = sizeof(client_addr);
@@ -600,6 +599,7 @@ DBG("1\n");
         pthread_detach(client);
 //        pglobal->in.add(conn);
     }
+    DBG("close server\n");
     close(server_sockfd);
     pthread_cleanup_pop(1);
     return NULL;
