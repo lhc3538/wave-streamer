@@ -384,7 +384,7 @@ void send_snapshot(int fd)
     unsigned int rate = 16000;
     unsigned int channels = 1;
     int err;
-    int buffer_frames = 16000;
+    int buffer_frames = 16000*8;
     int buffer_length = buffer_frames * snd_pcm_format_width(format)/8 * channels;
     char buffer[buffer_length];
     memset(buffer,0,buffer_length);
@@ -410,7 +410,7 @@ void send_snapshot(int fd)
 
     wave_header wav_head_data = {
         "RIFF",
-        0,
+        buffer_length+42,
         "WAVE",
         "fmt ",
         16,
@@ -421,7 +421,7 @@ void send_snapshot(int fd)
         32,
         16,
         "data",
-        0
+        buffer_length
     };
 
     /* send header and image now */
