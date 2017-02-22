@@ -40,4 +40,9 @@ DISTFILES += \
     output_http.so \
     test.wav \
     plugins/output_file/output_file.so \
-    output_file.so
+    output_file.so \
+    www/audio.html \
+    www/index.html \
+    www/note.xml \
+    www/note.html \
+    www/audio.js

@@ -372,6 +372,69 @@ void send_stream(int context_fd)
 
 
 /******************************************************************************
+Description.: Send a complete HTTP response and a single JPG-frame.
+Input Value.: fildescriptor fd to send the answer to
+Return Value: -
+******************************************************************************/
+void send_snapshot(int fd)
+{
+    //alsa init parameter
+    char *dev = "default";
+    snd_pcm_format_t format = SND_PCM_FORMAT_S16_LE;
+    unsigned int rate = 16000;
+    unsigned int channels = 1;
+    int err;
+    int buffer_frames = 16000;
+    int buffer_length = buffer_frames * snd_pcm_format_width(format)/8 * channels;
+    char buffer[buffer_length];
+    memset(buffer,0,buffer_length);
+
+    snd_pcm_t *capture_handle;
+    init_alsa(&capture_handle,dev,rate,format,channels);
+
+    char head[BUFFER_SIZE] = {0};
+    struct timeval timestamp;
+    gettimeofday(&timestamp, NULL);
+
+    if ((err = snd_pcm_readi (capture_handle, buffer, buffer_frames)) != buffer_frames) {
+        fprintf (stderr, "read from audio interface failed %d:(%s)\n",
+                 err, snd_strerror (err));
+        return;
+    }
+
+    /* write the response */
+    sprintf(head, "HTTP/1.0 200 OK\r\n" \
+                  "Content-type: audio/wav\r\n" \
+            STD_HEADER \
+            "\r\n");
+
+    wave_header wav_head_data = {
+        "RIFF",
+        0,
+        "WAVE",
+        "fmt ",
+        16,
+        1,
+        1,
+        16000,
+        16000*16,
+        32,
+        16,
+        "data",
+        0
+    };
+
+    /* send header and image now */
+    if (write(fd, head, strlen(head)) < 0 ||
+        write(fd, (char*)&wav_head_data, sizeof(wav_head_data)) < 0 ||
+        write(fd, buffer, buffer_length) < 0) {
+        return;
+    }
+
+    snd_pcm_close(capture_handle);
+}
+
+/******************************************************************************
 Description.: Send HTTP header and copy the content of a file. To keep things
               simple, just a single folder gets searched for the file. Just
               files with known extension and supported mimetype get served.
@@ -551,7 +614,11 @@ void *client_thread(void *arg)
     req.query_string = NULL;
 
     /* determine what to deliver */
-    if(strstr(buffer, "GET /?action=stream") != NULL) {
+    if(strstr(buffer, "GET /?action=snapshot") != NULL) {
+        req.type = A_SNAPSHOT;
+        query_suffixed = 255;
+    }
+    else if(strstr(buffer, "GET /?action=stream") != NULL) {
         req.type = A_STREAM;
         query_suffixed = 255;
     }
@@ -623,6 +690,10 @@ void *client_thread(void *arg)
 
 
     switch(req.type) {
+    case A_SNAPSHOT:
+        DBG("Request for snapshot from input:\n");
+        send_snapshot(client_fd);
+        break;
     case A_STREAM:
         DBG("Request for stream from input: \n");
         send_stream(client_fd);

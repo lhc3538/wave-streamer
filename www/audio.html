@@ -1,0 +1,28 @@
+<html>
+<head>
+<script type="text/javascript" src="./audio.js">
+
+</script>
+</head>
+
+<body>
+<h2>Using the HttpRequest Object</h2>
+
+<p><b>Status:</b>
+<span id="A1"></span>
+</p>
+
+<p><b>Status text:</b>
+<span id="A2"></span>
+</p>
+
+<p><b>Response:</b>
+<br /><span id="A3"></span>
+</p>
+
+<button onclick="loadXMLDoc('./note.html')">Get XML</button>
+<button onclick="loadXMLDoc('/?action=stream')">Get streamer</button>
+<button onclick="loadXMLDoc('/?action=snapshot')">Get snapshot</button>
+<button onclick="start('/?action=stream')">start</button>
+</body>
+</html>
