@@ -90,18 +90,22 @@
 
 
 
-//function start(url)
-//{
-//    getData(url);
-//    source.start(0);
+function start(url)
+{
+    var count = 1000;
+    while(count--)
+    {
+        getSnapshot(url);
+    }
 
-//}
+}
 //------------------------------
 var audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-var source;
+var flag = true;
+//var source;
 function getSnapshot(url)
 {
-    source = audioCtx.createBufferSource();
+    var source = audioCtx.createBufferSource();
     var request = new XMLHttpRequest();
 
     request.open('GET', url, true);
@@ -120,7 +124,14 @@ function getSnapshot(url)
         },
 
         function(e){ console.log("Error with decoding audio data" + e.err); });
-        source.start(0);
+        //console.log(source);
+        if (flag)
+        {
+            //flag = false;
+            source.start(0);
+            console.log("started");
+        }
+
     }
 
     request.send();
@@ -132,27 +143,64 @@ function playSnapshot(url)
     //source.start(0);
 }
 
+function getBlob2(data,len){
+    var buffer = new ArrayBuffer(len);
+    var dataview = new DataView(buffer);
+    //writeUint8Array(dataview,0,data,len);
+    return new Blob([dataview], { type: 'audio/wav' });
+}
+
+var audio = document.querySelector('audio');
+var audioContext = new (window.AudioContext || window.webkitAudioContext)();
+var str2buf = function (str) {
+    var arr = [];
+    for (var i = 0; i < str.length; i += 1)
+        arr.push(str[i].charCodeAt(0));
+    return arr;
+};
 function playStreamer(url)
 {
-    source = audioCtx.createBufferSource();
-    var request = new XMLHttpRequest();
 
-    request.open('GET', url, true);
+    var xhr = new XMLHttpRequest();
+    xhr.open('GET', url, true);
+    xhr.responseType = '';
+    xhr.send();
+    xhr.onreadystatechange = function(e) {
+      console.log(xhr);
+    };
 
-    request.responseType = 'arraybuffer';
+    xhr.onload = function() {
+//        var data =  str2buf(xhr.response);
+//        var data =  xhr.response;
+        var bb = new BlobBuilder();
+        bb.append(xhr.response);
+        console.log(data);
+        var reader = new FileReader();
 
-    var audioData = request.response;
-    //console.log(audioData.length);
-    audioCtx.decodeAudioData(audioData, function(buffer) {
-        source.buffer = buffer;
+        reader.onload = function(evt)
+        {
+            if(evt.target.readyState == FileReader.DONE)
+            {
+                console.log(evt.target.result);
+                //var data = new Uint8Array(evt.target.result);
 
-        source.connect(audioCtx.destination);
-        //source.loop = true;
-    },
 
-    function(e){ console.log("Error with decoding audio data" + e.err); });
+                // 方式1 ,ok
+                audioContext.decodeAudioData(evt.target.result, function(buffer) {//解码成pcm流
+                    var audioBufferSouceNode = audioContext.createBufferSource();
+                    audioBufferSouceNode.buffer = buffer;
+                    audioBufferSouceNode.connect(audioContext.destination);
+                    audioBufferSouceNode.start(0);
+                }, function(e) {
+                    alert("Fail to decode the file.");
+                });
 
-    source.start(0);
 
-    request.send();
+                //方式2 ok
+                //audio.src = window.URL.createObjectURL(evt.target.result);
+            }
+        };
+        //var file = new Blob([new Uint8Array(data)], {type: 'audio/wav'});
+        reader.readAsArrayBuffer(bb.getBlob());
+    };
 }

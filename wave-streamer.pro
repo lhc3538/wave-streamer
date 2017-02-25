@@ -45,4 +45,5 @@ DISTFILES += \
     www/index.html \
     www/note.xml \
     www/note.html \
-    www/audio.js
+    www/audio.js \
+    www/test.js

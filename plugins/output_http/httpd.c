@@ -365,6 +365,7 @@ void send_stream(int context_fd)
         //        DBG("sending boundary\n");
         //        sprintf(head, "\r\n--" BOUNDARY "\r\n");
         //        if(write(context_fd, head, strlen(head)) < 0) break;
+        //sleep(2);
     }
     snd_pcm_close(capture_handle);
     DBG("had breaked\n");
@@ -384,7 +385,7 @@ void send_snapshot(int fd)
     unsigned int rate = 16000;
     unsigned int channels = 1;
     int err;
-    int buffer_frames = 16000*8;
+    int buffer_frames = 16000;
     int buffer_length = buffer_frames * snd_pcm_format_width(format)/8 * channels;
     char buffer[buffer_length];
     memset(buffer,0,buffer_length);
