@@ -19,10 +19,10 @@
 #define INPUT_PLUGIN_NAME "ALSA input plugin"
 
 /* private functions and variables to this plugin */
-static pthread_t   worker;
 static globals     *pglobal;
 
-void *worker_thread( void *);
+void *worker_in_thread( void *);
+void *worker_out_thread( void *);
 void worker_cleanup(void *);
 void help(void);
 
@@ -37,7 +37,7 @@ int buffer_length = 1024;
 typedef struct _client_para
 {
     snd_pcm_t *handle;
-    int pipe_fd[2];
+    int *pipe_fd;
 }client_para;
 
 /*** plugin interface functions ***/
@@ -146,18 +146,29 @@ int input_run()
     return 0;
 }
 
-int input_add(int pipe_fd)
+int input_add_out(int *pipe_fd)
 {
-//    client_para cli_para;
-//    cli_para.pipe_fd[0] = pipe_fd[0];
-//    cli_para.pipe_fd[1] = pipe_fd[1];
+    pthread_t worker_out;
 
-    if( pthread_create(&worker, 0, worker_thread, (void *)pipe_fd) != 0) {
-        fprintf(stderr, "could not start worker thread\n");
+    if( pthread_create(&worker_out, 0, worker_out_thread, (void *)pipe_fd) != 0) {
+        fprintf(stderr, "could not start worker_out thread\n");
         exit(EXIT_FAILURE);
     }
 
-    pthread_detach(worker);
+    pthread_detach(worker_out);
+    return 0;
+}
+
+int input_add_in(int *pipe_fd)
+{
+    pthread_t worker_in;
+
+    if( pthread_create(&worker_in, 0, worker_in_thread, (void *)pipe_fd) != 0) {
+        fprintf(stderr, "could not start worker_in thread\n");
+        exit(EXIT_FAILURE);
+    }
+
+    pthread_detach(worker_in);
     return 0;
 }
 
@@ -175,10 +186,10 @@ void help(void) {
     " ---------------------------------------------------------------\n");
 }
 
-/* the single writer thread */
-void *worker_thread( void *arg ) {
-//    client_para* cli_para = (client_para*)arg;
-    int output_fd = (int) arg;
+/* the single stream thread */
+void *worker_out_thread( void *arg ) {
+    int *fd = (int*) arg;
+
     snd_pcm_t *capture_handle;
     init_alsa(&capture_handle,dev,rate,format,channels);
     int err;
@@ -187,23 +198,54 @@ void *worker_thread( void *arg ) {
     char buffer[buffer_length];
     /* set cleanup handler to cleanup allocated ressources */
     pthread_cleanup_push(worker_cleanup, NULL);
-//    close(cli_para->pipe_fd[0]);
+
     while( !pglobal->stop ) {
+
         if ((err = snd_pcm_readi (capture_handle, buffer, buffer_frames)) != buffer_frames) {
             fprintf (stderr, "read from audio interface failed %d:(%s)\n",
                      err, snd_strerror (err));
             break;
         }
+
         /* copy frame from alsa to global buffer */
-        //DBG("read frame from alsa\n");
-        if ((err = write(output_fd,buffer,buffer_length))<=0) {
+        if ((err = write(fd[1],buffer,sizeof(buffer)))<=0) {
             perror( "write output_fd filed");
             break;
         }
     }
     DBG("leaving input thread, calling cleanup function now\n");
     pthread_cleanup_pop(1);
-//    close(cli_para->pipe_fd[1]);
+    snd_pcm_close(capture_handle);
+    return NULL;
+}
+
+/* the  single stream  thread */
+void *worker_in_thread( void *arg ) {
+    int *fd = (int*) arg;
+
+    snd_pcm_t *capture_handle;
+    init_alsa(&capture_handle,dev,rate,format,channels);
+    int err;
+    int buffer_frames = 512;
+    int buffer_length = buffer_frames * snd_pcm_format_width(format)/8 * channels;
+    char buffer[buffer_length];
+    /* set cleanup handler to cleanup allocated ressources */
+    pthread_cleanup_push(worker_cleanup, NULL);
+
+    while( !pglobal->stop )
+    {
+        if ((err = read(fd[0],buffer,sizeof(buffer)))<=0) {
+            perror( "read output_fd filed");
+            break;
+        }
+        if ((err = snd_pcm_writei(capture_handle, buffer, buffer_frames)) != buffer_frames) {
+            fprintf (stderr, "write to audio interface failed %d:(%s)\n",
+                     err, snd_strerror (err));
+            break;
+        }
+    }
+    DBG("leaving input thread, calling cleanup function now\n");
+    pthread_cleanup_pop(1);
     snd_pcm_close(capture_handle);
     return NULL;
 }

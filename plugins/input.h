@@ -31,5 +31,6 @@ struct _input {
     int (*init)(input_parameter *);
     int (*stop)();
     int (*run)();
-    int (*add)(int);
+    int (*add_in)(int *);
+    int (*add_out)(int *);
 };

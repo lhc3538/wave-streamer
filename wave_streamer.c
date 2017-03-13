@@ -30,31 +30,31 @@ void help(char *progname)
 {
     fprintf(stderr, "-----------------------------------------------------------------------\n");
     fprintf(stderr, "Usage: %s\n" \
-            "  -i | --input \"<input-plugin.so> [parameters]\"\n" \
-            "  -o | --output \"<output-plugin.so> [parameters]\"\n" \
-            " [-h | --help ]........: display this help\n" \
-            " [-v | --version ].....: display version information\n" \
-            " [-b | --background]...: fork to the background, daemon mode\n", progname);
+                    "  -i | --input \"<input-plugin.so> [parameters]\"\n" \
+                    "  -o | --output \"<output-plugin.so> [parameters]\"\n" \
+                    " [-h | --help ]........: display this help\n" \
+                    " [-v | --version ].....: display version information\n" \
+                    " [-b | --background]...: fork to the background, daemon mode\n", progname);
     fprintf(stderr, "-----------------------------------------------------------------------\n");
     fprintf(stderr, "Example #1:\n" \
-            " To open an UVC webcam \"/dev/video1\" and stream it via HTTP:\n" \
-            "  %s -i \"input_uvc.so -d /dev/video1\" -o \"output_http.so\"\n", progname);
+                    " To open an UVC webcam \"/dev/video1\" and stream it via HTTP:\n" \
+                    "  %s -i \"input_uvc.so -d /dev/video1\" -o \"output_http.so\"\n", progname);
     fprintf(stderr, "-----------------------------------------------------------------------\n");
     fprintf(stderr, "Example #2:\n" \
-            " To open an UVC webcam and stream via HTTP port 8090:\n" \
-            "  %s -i \"input_uvc.so\" -o \"output_http.so -p 8090\"\n", progname);
+                    " To open an UVC webcam and stream via HTTP port 8090:\n" \
+                    "  %s -i \"input_uvc.so\" -o \"output_http.so -p 8090\"\n", progname);
     fprintf(stderr, "-----------------------------------------------------------------------\n");
     fprintf(stderr, "Example #3:\n" \
-            " To get help for a certain input plugin:\n" \
-            "  %s -i \"input_uvc.so --help\"\n", progname);
+                    " To get help for a certain input plugin:\n" \
+                    "  %s -i \"input_uvc.so --help\"\n", progname);
     fprintf(stderr, "-----------------------------------------------------------------------\n");
     fprintf(stderr, "In case the modules (=plugins) can not be found:\n" \
-            " * Set the default search path for the modules with:\n" \
-            "   export LD_LIBRARY_PATH=/path/to/plugins,\n" \
-            " * or put the plugins into the \"/lib/\" or \"/usr/lib\" folder,\n" \
-            " * or instead of just providing the plugin file name, use a complete\n" \
-            "   path and filename:\n" \
-            "   %s -i \"/path/to/modules/input_uvc.so\"\n", progname);
+                    " * Set the default search path for the modules with:\n" \
+                    "   export LD_LIBRARY_PATH=/path/to/plugins,\n" \
+                    " * or put the plugins into the \"/lib/\" or \"/usr/lib\" folder,\n" \
+                    " * or instead of just providing the plugin file name, use a complete\n" \
+                    "   path and filename:\n" \
+                    "   %s -i \"/path/to/modules/input_uvc.so\"\n", progname);
     fprintf(stderr, "-----------------------------------------------------------------------\n");
 }
 
@@ -145,19 +145,19 @@ int main(int argc, char *argv[])
     while(1) {
         int option_index = 0, c = 0;
         static struct option long_options[] = {
-            {"h", no_argument, 0, 0
-            },
-            {"help", no_argument, 0, 0},
-            {"i", required_argument, 0, 0},
-            {"input", required_argument, 0, 0},
-            {"o", required_argument, 0, 0},
-            {"output", required_argument, 0, 0},
-            {"v", no_argument, 0, 0},
-            {"version", no_argument, 0, 0},
-            {"b", no_argument, 0, 0},
-            {"background", no_argument, 0, 0},
-            {0, 0, 0, 0}
-        };
+        {"h", no_argument, 0, 0
+        },
+        {"help", no_argument, 0, 0},
+        {"i", required_argument, 0, 0},
+        {"input", required_argument, 0, 0},
+        {"o", required_argument, 0, 0},
+        {"output", required_argument, 0, 0},
+        {"v", no_argument, 0, 0},
+        {"version", no_argument, 0, 0},
+        {"b", no_argument, 0, 0},
+        {"background", no_argument, 0, 0},
+        {0, 0, 0, 0}
+    };
 
         c = getopt_long_only(argc, argv, "", long_options, &option_index);
 
@@ -171,7 +171,7 @@ int main(int argc, char *argv[])
         }
 
         switch(option_index) {
-            /* h, help */
+        /* h, help */
         case 0:
         case 1:
             help(argv[0]);
@@ -194,14 +194,14 @@ int main(int argc, char *argv[])
         case 6:
         case 7:
             printf("MJPG Streamer Version: %s\n" \
-            "Compilation Date.....: %s\n" \
-            "Compilation Time.....: %s\n",
-#ifdef SVN_REV
-            SVN_REV,
-#else
-            SOURCE_VERSION,
-#endif
-            __DATE__, __TIME__);
+                   "Compilation Date.....: %s\n" \
+                   "Compilation Time.....: %s\n",
+       #ifdef SVN_REV
+                   SVN_REV,
+       #else
+                   SOURCE_VERSION,
+       #endif
+                   __DATE__, __TIME__);
             return 0;
             break;
 
@@ -275,8 +275,13 @@ int main(int argc, char *argv[])
         LOG("%s\n", dlerror());
         exit(EXIT_FAILURE);
     }
-    global.in.add = dlsym(global.in.handle, "input_add");
-    if(global.in.add == NULL) {
+    global.in.add_in = dlsym(global.in.handle, "input_add_in");
+    if(global.in.add_in == NULL) {
+        LOG("%s\n", dlerror());
+        exit(EXIT_FAILURE);
+    }
+    global.in.add_out = dlsym(global.in.handle, "input_add_out");
+    if(global.in.add_out == NULL) {
         LOG("%s\n", dlerror());
         exit(EXIT_FAILURE);
     }
@@ -351,9 +356,10 @@ int main(int argc, char *argv[])
     syslog(LOG_INFO, "starting output plugin: %s ", global.out.plugin);
     global.out.run();
 
+
     /* wait for signals */
     pause();
-
+    exit(0);
     return 0;
 }
 

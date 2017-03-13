@@ -24,6 +24,7 @@
 static pthread_t worker;
 static globals *pglobal;
 
+char *ip;
 int port = 8081,queue = 20;
 /******************************************************************************
 Description.: print a help message
@@ -66,6 +67,73 @@ void worker_cleanup(void *arg) {
 
 }
 
+void *worker_in_thread( void *arg )
+{
+    int sock_fd = (int) arg;
+    int pipe_fd[2];
+    char buffer[1024];
+
+    if (pipe(pipe_fd) == -1)
+    {
+        perror("pipe init failed");
+        return;
+    }
+
+    /* start input plug thread */
+    pglobal->in.add_in(pipe_fd);
+
+    while(!pglobal->stop)
+    {
+        if (read(sock_fd,buffer,sizeof(buffer))<=0)
+        {
+            perror("read socket failed");
+            break;
+        }
+        if (write(pipe_fd[1],buffer,sizeof(buffer))<=0)
+        {
+            perror("write pipe failed");
+            break;
+        }
+    }
+    close(sock_fd);
+    close(pipe_fd[0]);
+    close(pipe_fd[1]);
+}
+
+void *worker_out_thread( void *arg )
+{
+    int sock_fd = (int) arg;
+    int pipe_fd[2];
+    char buffer[1024];
+
+    if (pipe(pipe_fd) == -1)
+    {
+        perror("pipe init failed");
+        return;
+    }
+
+    /* start input plug thread */
+    pglobal->in.add_out(pipe_fd);
+
+    while(!pglobal->stop)
+    {
+        if (read(pipe_fd[0],buffer,sizeof(buffer))<=0)
+        {
+            perror("read pipe");
+            break;
+        }
+        if (write(sock_fd,buffer,sizeof(buffer))<=0)
+        {
+            perror("write socket failed");
+            break;
+        }
+//        printf("data:%s",buffer);
+    }
+    close(sock_fd);
+    close(pipe_fd[0]);
+    close(pipe_fd[1]);
+}
+
 /******************************************************************************
 Description.: this is the main worker thread
               it loops forever, grabs a fresh frame and stores it to file
@@ -93,7 +161,14 @@ void *worker_thread( void *arg )
             exit(1);
         }
         DBG("客户端成功连接,socketID=%d\n",conn);
-        pglobal->in.add(conn);
+        /* output stream thread */
+        pthread_t  worker_out;
+        pthread_create(&worker_out, 0, worker_out_thread, (void*)conn);
+        pthread_detach(worker_out);
+        /* input stream thread */
+        pthread_t  worker_in;
+        pthread_create(&worker_in, 0, worker_in_thread, (void*)conn);
+        pthread_detach(worker_in);
     }
     close(server_sockfd);
     pthread_cleanup_pop(1);
@@ -130,6 +205,10 @@ int output_init(output_parameter *param)
         {
         {"h", no_argument, 0, 0},
         {"help", no_argument, 0, 0},
+        {"t", required_argument, 0, 0},
+        {"type", required_argument, 0, 0},
+        {"i", required_argument, 0, 0},
+        {"ip", required_argument, 0, 0},
         {"p", required_argument, 0, 0},
         {"port", required_argument, 0, 0},
         {"q", required_argument, 0, 0},
