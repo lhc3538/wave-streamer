@@ -52,15 +52,13 @@ int connect_server(char *ip,int port)
 {
     ///定义sockfd
     int sock_cli = socket(AF_INET,SOCK_STREAM, 0);
-
     ///定义sockaddr_in
     struct sockaddr_in servaddr;
     memset(&servaddr, 0, sizeof(servaddr));
     servaddr.sin_family = AF_INET;
     servaddr.sin_port = htons(port);  ///服务器端口
     servaddr.sin_addr.s_addr = inet_addr(ip);  ///服务器ip
-
-    printf("连接%s:%d\n",ip,port);
+    DBG("连接%s:%d\n",ip,port);
     ///连接服务器，成功返回0，错误返回-1
     if (connect(sock_cli, (struct sockaddr *)&servaddr, sizeof(servaddr)) < 0)
     {

@@ -13,7 +13,9 @@ SOURCES += \
     utils.c \
     plugins/output_http/httpd.c \
     plugins/output_file/output_file.c \
-    plugins/output_websocket/output_websocket.c
+    plugins/output_websocket/output_websocket.c \
+    plugins/input_dsp/input_dsp.c \
+    plugins/input_oss/input_oss.c
 
 HEADERS += \
     wave_streamer.h \
@@ -46,4 +48,5 @@ DISTFILES += \
     www/note.xml \
     www/note.html \
     www/audio.js \
-    www/test.js
+    www/test.js \
+    www/test.wav

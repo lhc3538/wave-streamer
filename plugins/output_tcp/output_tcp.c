@@ -24,7 +24,8 @@
 static pthread_t worker;
 static globals *pglobal;
 
-char *ip;
+char *type = "server";
+char *ip = "127.0.0.1";
 int port = 8081,queue = 20;
 /******************************************************************************
 Description.: print a help message
@@ -175,6 +176,34 @@ void *worker_thread( void *arg )
     return NULL;
 }
 
+/**
+ * @brief client_thread
+ * tcp socket client type thread
+ * @param arg
+ * @return
+ */
+void *client_thread( void *arg )
+{
+    /*create socket fd*/
+    int client_sockfd = connect_server(ip,port);
+    if (client_sockfd < 0)
+    {
+        perror("connect server failed");
+        exit(1);
+    }
+
+    /* output stream thread */
+    pthread_t  worker_out;
+    pthread_create(&worker_out, 0, worker_out_thread, (void*)client_sockfd);
+    pthread_detach(worker_out);
+    /* input stream thread */
+    pthread_t  worker_in;
+    pthread_create(&worker_in, 0, worker_in_thread, (void*)client_sockfd);
+    pthread_detach(worker_in);
+
+    return NULL;
+}
+
 /*** plugin interface functions ***/
 /******************************************************************************
 Description.: this function is called first, in order to initialise
@@ -236,18 +265,32 @@ int output_init(output_parameter *param)
             return 1;
             break;
 
-        /* p, port */
+        /* t, type */
         case 2:
         case 3:
             DBG("case 2,3\n");
+            type = strdup(optarg);
+            break;
+
+        /* i, ip */
+        case 4:
+        case 5:
+            DBG("case 4,5\n");
+            ip = strdup(optarg);
+            break;
+
+        /* p, port */
+        case 6:
+        case 7:
+            DBG("case 6,7\n");
             port = atoi(optarg);
             break;
 
         /* q, queue */
-        case 4:
-        case 5:
+        case 8:
+        case 9:
             queue = atoi(optarg);
-            DBG("case 4,5\n");
+            DBG("case 8,9\n");
             break;
 
         default:
@@ -278,9 +321,18 @@ Description.: calling this function creates and starts the worker thread
 Input Value.: -
 Return Value: always 0
 ******************************************************************************/
-int output_run() {
-    DBG("launching worker thread\n");
-    pthread_create(&worker, 0, worker_thread, NULL);
+int output_run()
+{
+    DBG("launching worker thread %s\n",type);
+    if (strcmp(type,"server") == 0)
+        pthread_create(&worker, 0, worker_thread, NULL);
+    else if (strcmp(type,"client") == 0)
+        pthread_create(&worker, 0, client_thread, NULL);
+    else
+    {
+        OPRINT("Bad parameter in type:%s\n",  type);
+        return -1;
+    }
     pthread_detach(worker);
     return 0;
 }

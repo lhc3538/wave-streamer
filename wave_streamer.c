@@ -193,7 +193,7 @@ int main(int argc, char *argv[])
             /* v, version */
         case 6:
         case 7:
-            printf("MJPG Streamer Version: %s\n" \
+            printf("WAVE Streamer Version: %s\n" \
                    "Compilation Date.....: %s\n" \
                    "Compilation Time.....: %s\n",
        #ifdef SVN_REV
@@ -334,9 +334,12 @@ int main(int argc, char *argv[])
         exit(EXIT_FAILURE);
     }
 
+    global.out.param.parameters = strchr(output,' ');
+
     for (j = 0; j<MAX_PLUGIN_ARGUMENTS; j++) {
         global.out.param.argv[j] = NULL;
     }
+
     split_parameters(global.out.param.parameters, &global.out.param.argc, global.out.param.argv);
 
     global.out.param.global = &global;

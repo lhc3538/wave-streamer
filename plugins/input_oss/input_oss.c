@@ -10,30 +10,30 @@
 #include <sys/stat.h>
 #include <getopt.h>
 #include <pthread.h>
-#include <alsa/asoundlib.h>
+#include <sys/ioctl.h>
+#include <fcntl.h>
+#include <linux/soundcard.h>
 
 #include "../../wave_streamer.h"
 #include "../../utils.h"
-#include "../../tools/alsa.h"
 
-#define INPUT_PLUGIN_NAME "ALSA input plugin"
+#define INPUT_PLUGIN_NAME "OSS input plugin"
 
 /* private functions and variables to this plugin */
 static globals     *pglobal;
-/* alsa fd */
-snd_pcm_t *capture_handle = NULL;
+/* oss fd */
+int oss_fd;
 
 void *worker_in_thread( void *);
 void *worker_out_thread( void *);
 void worker_cleanup(void *);
 void help(void);
 
-//alsa init parameter
-char *dev = "default";
-snd_pcm_format_t format = SND_PCM_FORMAT_S16_LE;
-unsigned int rate = 16000;
-unsigned int channels = 1;
-int buffer_frames = 512;
+//oss init parameter
+char *dev = "/dev/dsp";
+int bits = 16;
+int rate = 16000;
+int channels = 1;
 int buffer_length = 1024;
 
 typedef struct _client_para
