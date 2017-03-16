@@ -15,7 +15,8 @@ SOURCES += \
     plugins/output_file/output_file.c \
     plugins/output_websocket/output_websocket.c \
     plugins/input_dsp/input_dsp.c \
-    plugins/input_oss/input_oss.c
+    plugins/input_oss/input_oss.c \
+    plugins/output_udp/output_udp.c
 
 HEADERS += \
     wave_streamer.h \
@@ -48,4 +49,6 @@ DISTFILES += \
     www/note.xml \
     www/note.html \
     www/audio.js \
-    www/test.js
+    www/test.js \
+    plugins/input_oss/input_oss.so \
+    input_oss.so

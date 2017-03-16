@@ -5,6 +5,7 @@
 /* FIXME take a look to the output_http clients thread marked with fixme if you want to set more then 10 plugins */
 #define MAX_PLUGIN_ARGUMENTS 32
 #define MAX_USERS 100
+#define BUFFER_LENGTH 1024
 
 #define DEBUG
 #ifdef DEBUG
