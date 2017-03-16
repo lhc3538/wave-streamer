@@ -18,12 +18,13 @@
 #include "../../utils.h"
 
 #define INPUT_PLUGIN_NAME "OSS input plugin"
-
+#define BUFFER_LENGTH 1024
 /* private functions and variables to this plugin */
 static globals     *pglobal;
 /* oss fd */
 int oss_fd;
 
+int init_oss();
 void *worker_in_thread( void *);
 void *worker_out_thread( void *);
 void worker_cleanup(void *);
@@ -34,13 +35,6 @@ char *dev = "/dev/dsp";
 int bits = 16;
 int rate = 16000;
 int channels = 1;
-int buffer_length = 1024;
-
-typedef struct _client_para
-{
-    snd_pcm_t *handle;
-    int *pipe_fd;
-}client_para;
 
 /*** plugin interface functions ***/
 int input_init(input_parameter *param) {
@@ -101,9 +95,7 @@ int input_init(input_parameter *param) {
         case 4:
         case 5:
             DBG("case 4,5\n");
-            format_temp = atoi(optarg);
-            if (format_temp == 8)
-                format = SND_PCM_FORMAT_S8;
+            bits = atoi(optarg);
             break;
 
             /* r, rate*/
@@ -135,7 +127,7 @@ int input_init(input_parameter *param) {
     param->global->in.name = malloc((strlen(INPUT_PLUGIN_NAME) + 1) * sizeof(char));
     sprintf(param->global->in.name, INPUT_PLUGIN_NAME);
 
-    return 0;
+    return init_oss();
 }
 
 int input_stop() {
@@ -188,22 +180,46 @@ void help(void) {
     " ---------------------------------------------------------------\n");
 }
 
+int init_oss()
+{
+    oss_fd = open(dev , O_RDWR);
+    if(-1 == oss_fd )
+    {
+        perror("Open SoundCard Fail ... \n");
+        return -1 ;
+    }
+    if(ioctl(oss_fd , SOUND_PCM_WRITE_RATE , &rate) < 0)
+    {
+        perror("write soundcard rate fail");
+        return -1;
+    }
+    if(ioctl(oss_fd , SOUND_PCM_WRITE_CHANNELS, &channels) < 0)
+    {
+        perror("write soundcard channels fail");
+        return -1;
+    }
+    if(ioctl(oss_fd , SOUND_PCM_WRITE_BITS ,&bits ) < 0)
+    {
+        perror("write soundcard bits fail");
+        return -1;
+    }
+    IPRINT("rate:%d channels:%d bits:%d \n" ,
+           rate , channels , bits);
+    return 0;
+}
+
 /* the single stream thread */
 void *worker_out_thread( void *arg ) {
     int *fd = (int*) arg;
 
-    if (capture_handle == NULL)
-        init_alsa(&capture_handle,dev,rate,format,channels);
     int err;
-    int buffer_frames = 512;
-    int buffer_length = buffer_frames * snd_pcm_format_width(format)/8 * channels;
-    char buffer[buffer_length];
+    char buffer[BUFFER_LENGTH];
     /* set cleanup handler to cleanup allocated ressources */
     pthread_cleanup_push(worker_cleanup, NULL);
 
     while( !pglobal->stop ) {
 
-        if ((err = snd_pcm_readi (capture_handle, buffer, buffer_frames)) != buffer_frames) {
+        if (read(oss_fd,buffer,BUFFER_LENGTH) <= 0) {
             fprintf (stderr, "read from audio interface failed %d:(%s)\n",
                      err, snd_strerror (err));
             break;
@@ -217,7 +233,6 @@ void *worker_out_thread( void *arg ) {
     }
     DBG("leaving input thread, calling cleanup function now\n");
     pthread_cleanup_pop(1);
-    snd_pcm_close(capture_handle);
     return NULL;
 }
 
@@ -225,12 +240,8 @@ void *worker_out_thread( void *arg ) {
 void *worker_in_thread( void *arg ) {
     int *fd = (int*) arg;
 
-    if (capture_handle == NULL)
-        init_alsa(&capture_handle,dev,rate,format,channels);
     int err;
-    int buffer_frames = 512;
-    int buffer_length = buffer_frames * snd_pcm_format_width(format)/8 * channels;
-    char buffer[buffer_length];
+    char buffer[BUFFER_LENGTH];
     /* set cleanup handler to cleanup allocated ressources */
     pthread_cleanup_push(worker_cleanup, NULL);
 
@@ -240,15 +251,14 @@ void *worker_in_thread( void *arg ) {
             perror( "read output_fd filed");
             break;
         }
-        if ((err = snd_pcm_writei(capture_handle, buffer, buffer_frames)) != buffer_frames) {
-            fprintf (stderr, "write to audio interface failed %d:(%s)\n",
+        if (write(oss_fd,buffer,BUFFER_LENGTH) <= 0) {
+            fprintf (stderr, "write from audio interface failed %d:(%s)\n",
                      err, snd_strerror (err));
             break;
         }
     }
     DBG("leaving input thread, calling cleanup function now\n");
     pthread_cleanup_pop(1);
-    snd_pcm_close(capture_handle);
     return NULL;
 }
 
@@ -259,6 +269,8 @@ void worker_cleanup(void *arg) {
         DBG("already cleaned up ressources\n");
         return;
     }
+
+    close(oss_fd);
 
 
     first_run = 0;
