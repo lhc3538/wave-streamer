@@ -27,10 +27,14 @@ typedef struct
 } Package;
 
 static globals *pglobal;
+pthread_t  worker_out,worker_in;
+
+static pthread_mutex_t mtx = PTHREAD_MUTEX_INITIALIZER;
+static pthread_cond_t cond = PTHREAD_COND_INITIALIZER;
 
 int sock_fd;
+unsigned long long send_id,recv_id;
 int port = 8081;
-struct sockaddr_in addr_cache;
 /******************************************************************************
 Description.: print a help message
 Input Value.: -
@@ -74,11 +78,11 @@ void worker_cleanup(void *arg) {
 
 void *worker_in_thread( void *arg )
 {
-    int sock_fd = (int) arg;
     Package pack;
     char buf[sizeof(Package)];
-    int n,addr_len = sizeof(addr_cache);
-    unsigned long long current_id = 0;
+    int n;
+    struct sockaddr_in addr;
+    int len = sizeof(addr);
 
     int pipe_fd[2];
     if (pipe(pipe_fd) == -1)
@@ -92,25 +96,46 @@ void *worker_in_thread( void *arg )
 
     while(!pglobal->stop)
     {
-        n = recvfrom(sock_fd, buf, sizeof(Package), 0, (struct sockaddr *)&addr_cache, &addr_len);
-        if (n <= 0)
+        n = recvfrom(sock_fd, buf, sizeof(Package), 0, (struct sockaddr *)&addr, &len);
+        if (n == EWOULDBLOCK || n == EAGAIN )
+        {
+            //timeout
+            DBG("timeout\n");
+            pthread_mutex_lock(&mtx);
+            send_id = 0;
+            pthread_mutex_unlock(&mtx);
+            recv_id = 0;
+        }
+        else if(n < 0)
         {
             perror("recvfrom err");
 //            break;
         }
         else
         {
-            memcpy(&pack,buf,sizeof(Package));
-            if (pack.id > current_id)
+            DBG("recved %d\n",recv_id);
+            if (recv_id == 3)
             {
-                if (write(pipe_fd[1],buffer,sizeof(buffer))<=0)
+                if(connect(sock_fd,(struct sockaddr*)&addr,sizeof(addr))==-1)
+                {
+                    perror("error in connecting");
+                    break;
+                }
+                pthread_mutex_lock(&mtx);             //需要操作head这个临界资源，先加锁，
+                send_id = 3;
+                pthread_cond_signal(&cond);
+                pthread_mutex_unlock(&mtx);           //解锁
+            }
+            memcpy(&pack,buf,sizeof(Package));
+            if (pack.id > recv_id)
+            {
+                if (write(pipe_fd[1],pack.data,sizeof(pack.data))<=0)
                 {
                     perror("write pipe failed");
                     break;
                 }
-                current_id = pack.id;
+                recv_id = pack.id;
             }
-
         }
     }
     close(sock_fd);
@@ -120,11 +145,8 @@ void *worker_in_thread( void *arg )
 
 void *worker_out_thread( void *arg )
 {
-    int sock_fd = (int) arg;
     Package pack;
     char buf[sizeof(Package)];
-    int n,addr_len = sizeof(addr_cache);
-    unsigned long long current_id = 0;
 
     int pipe_fd[2];
     if (pipe(pipe_fd) == -1)
@@ -133,17 +155,27 @@ void *worker_out_thread( void *arg )
         return;
     }
 
-    /* start input plug thread */
-    pglobal->in.add_out(pipe_fd);
-
     while(!pglobal->stop)
     {
-        if (read(pipe_fd[0],buffer,sizeof(buffer))<=0)
+        pthread_mutex_lock(&mtx);
+        while(send_id < 3)
+        {
+            pthread_cond_wait(&cond,&mtx);
+        }
+        pthread_mutex_unlock(&mtx);
+        DBG("unlock\n");
+        if (send_id == 3)
+            /* start input plug thread */
+            pglobal->in.add_out(pipe_fd);
+        DBG("start in audio\n");
+        if (read(pipe_fd[0],pack.data,sizeof(pack.data))<=0)
         {
             perror("read pipe");
             break;
         }
-        if (write(sock_fd,buffer,sizeof(buffer))<=0)
+        pack.id = send_id++;
+        DBG("sent\n");
+        if (send(sock_fd,&pack,sizeof(Package),0)<=0)
         {
             perror("write socket failed");
             break;
@@ -174,6 +206,15 @@ int init_sock()
     if (bind(sock_fd, (struct sockaddr *)&addr, sizeof(addr)) < 0)
     {
         perror("bind error");
+        return -1;
+    }
+    //set recvfrom timeout back
+    struct timeval tv;
+    tv.tv_sec = 2;
+    tv.tv_usec = 0;
+    if(setsockopt(sock_fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv))<0)
+    {
+        perror("socket option  SO_RCVTIMEO not support\n");
         return -1;
     }
 }
@@ -259,7 +300,8 @@ Return Value: always 0
 ******************************************************************************/
 int output_stop() {
     DBG("will cancel worker thread\n");
-    pthread_cancel(worker);
+    pthread_cancel(worker_in);
+    pthread_cancel(worker_out);
     return 0;
 }
 
@@ -270,19 +312,14 @@ Return Value: always 0
 ******************************************************************************/
 int output_run()
 {
-    DBG("launching worker thread %s\n",type);
-
     /*create socket fd*/
     if(init_sock() < 0)
         return NULL;
 
-    DBG("客户端成功连接,socketID=%d\n",conn);
     /* output stream thread */
-    pthread_t  worker_out;
     pthread_create(&worker_out, 0, worker_out_thread, NULL);
     pthread_detach(worker_out);
     /* input stream thread */
-    pthread_t  worker_in;
     pthread_create(&worker_in, 0, worker_in_thread, NULL);
     pthread_detach(worker_in);
 
